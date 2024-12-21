@@ -1,0 +1,323 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Cost Manager</title>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            margin: 20px;
+        }
+        .container {
+            max-width: 800px;
+            margin: auto;
+        }
+        section {
+            margin-bottom: 20px;
+            padding: 15px;
+            border: 1px solid #ccc;
+            border-radius: 5px;
+        }
+        h2 {
+            margin-top: 0;
+        }
+        label {
+            display: block;
+            margin: 5px 0;
+        }
+        input, select, button {
+            margin-bottom: 10px;
+            width: 100%;
+            padding: 8px;
+            box-sizing: border-box;
+        }
+        canvas {
+            width: 100%;
+            max-width: 600px;
+            margin: auto;
+        }
+    </style>
+</head>
+<body>
+<div class="container">
+    <header>
+        <h1>Cost Manager</h1>
+    </header>
+
+    <section>
+        <h2>Add Cost Item</h2>
+        <form id="add-cost-form">
+            <label for="sum">Sum:</label>
+            <input type="number" id="sum" name="sum" required>
+
+            <label for="category">Category:</label>
+            <select id="category" name="category" required>
+                <option value="food">Food</option>
+                <option value="transportation">Transportation</option>
+                <option value="entertainment">Entertainment</option>
+                <option value="utilities">Utilities</option>
+                <option value="other">Other</option>
+            </select>
+
+            <label for="description">Description:</label>
+            <input type="text" id="description" name="description" required>
+
+            <button type="submit">Add Item</button>
+        </form>
+
+        <!-- אזור להצגת הפריטים שנוספו -->
+        <h3>Added Items:</h3>
+        <ul id="added-items-list"></ul>
+    </section>
+
+    <section>
+        <h2>Monthly Report</h2>
+        <form id="report-form">
+            <label for="report-month">Month:</label>
+            <input type="number" id="report-month" name="month" min="1" max="12" required>
+
+            <label for="report-year">Year:</label>
+            <input type="number" id="report-year" name="year" required>
+
+            <button type="submit">Generate Report</button>
+        </form>
+        <div id="report-output"></div>
+    </section>
+
+    <section>
+        <h2>Cost Breakdown Pie Chart</h2>
+        <form id="chart-form">
+            <label for="chart-month">Month:</label>
+            <input type="number" id="chart-month" name="month" min="1" max="12" required>
+
+            <label for="chart-year">Year:</label>
+            <input type="number" id="chart-year" name="year" required>
+
+            <button type="submit">Generate Pie Chart</button>
+        </form>
+        <canvas id="cost-pie-chart"></canvas>
+    </section>
+</div>
+
+<script>
+    // IndexedDB Wrapper
+    class IndexedDBWrapper {
+        constructor(dbName, storeName) {
+            this.dbName = dbName;
+            this.storeName = storeName;
+        }
+
+        async init() {
+            this.db = await new Promise((resolve, reject) => {
+                const request = indexedDB.open(this.dbName, 1);
+                request.onupgradeneeded = (event) => {
+                    const db = event.target.result;
+                    if (!db.objectStoreNames.contains(this.storeName)) {
+                        db.createObjectStore(this.storeName, { keyPath: "id", autoIncrement: true });
+                    }
+                };
+                request.onsuccess = () => resolve(request.result);
+                request.onerror = () => reject(request.error);
+            });
+        }
+
+        async add(item) {
+            return new Promise((resolve, reject) => {
+                const transaction = this.db.transaction(this.storeName, "readwrite");
+                const store = transaction.objectStore(this.storeName);
+                const request = store.add(item);
+                request.onsuccess = () => resolve(request.result);
+                request.onerror = () => reject(request.error);
+            });
+        }
+
+        async getAll() {
+            return new Promise((resolve, reject) => {
+                const transaction = this.db.transaction(this.storeName, "readonly");
+                const store = transaction.objectStore(this.storeName);
+                const request = store.getAll();
+                request.onsuccess = () => resolve(request.result);
+                request.onerror = () => reject(request.error);
+            });
+        }
+    }
+
+    // Initialize IndexedDB
+    const db = new IndexedDBWrapper("CostManagerDB", "costItems");
+    db.init();
+
+    // Add Cost Item
+    // עדכון הקוד להוספת מוצר
+    document.getElementById("add-cost-form").addEventListener("submit", async (e) => {
+        e.preventDefault();
+        const sum = parseFloat(document.getElementById("sum").value);
+        const category = document.getElementById("category").value;
+        const description = document.getElementById("description").value;
+        const date = new Date();
+
+        await db.add({ sum, category, description, date });
+
+        // הוספת הפריט החדש לרשימה
+        const addedItemsList = document.getElementById("added-items-list");
+        const listItem = document.createElement("li");
+        listItem.textContent = `${category}: $${sum} - ${description}`;
+        addedItemsList.appendChild(listItem);
+
+        // איפוס הטופס
+        e.target.reset();
+
+        // קבלת נתונים מעודכנים וטעינת גרף מחדש
+        const month = new Date().getMonth() + 1; // חודש נוכחי
+        const year = new Date().getFullYear();  // שנה נוכחית
+        const items = await db.getAll();
+        const filteredItems = items.filter(item => {
+            const itemDate = new Date(item.date);
+            return itemDate.getMonth() + 1 === month && itemDate.getFullYear() === year;
+        });
+
+        const categoryTotals = {};
+        filteredItems.forEach(item => {
+            categoryTotals[item.category] = (categoryTotals[item.category] || 0) + item.sum;
+        });
+
+        updatePieChart(categoryTotals);
+    });
+
+
+    // Generate Report
+    document.getElementById("report-form").addEventListener("submit", async (e) => {
+        e.preventDefault();
+        const month = parseInt(document.getElementById("report-month").value);
+        const year = parseInt(document.getElementById("report-year").value);
+        const reportOutput = document.getElementById("report-output");
+        reportOutput.innerHTML = "";
+
+        const items = await db.getAll();
+        const filteredItems = items.filter(item => {
+            const itemDate = new Date(item.date);
+            return itemDate.getMonth() + 1 === month && itemDate.getFullYear() === year;
+        });
+
+        if (filteredItems.length === 0) {
+            reportOutput.textContent = "No items found for the selected month and year.";
+            return;
+        }
+
+        const list = document.createElement("ul");
+        filteredItems.forEach(item => {
+            const listItem = document.createElement("li");
+            listItem.textContent = `${item.category}: $${item.sum} - ${item.description}`;
+            list.appendChild(listItem);
+        });
+
+        reportOutput.appendChild(list);
+    });
+
+    let pieChart; // משתנה גלובלי לאובייקט של הגרף
+    // פונקציה לעדכון נתוני גרף
+    function updatePieChart(data) {
+        const ctx = document.getElementById("cost-pie-chart").getContext("2d");
+
+        // אם כבר קיים גרף, מעדכנים אותו במקום ליצור חדש
+        if (pieChart) {
+            pieChart.data.labels = Object.keys(data);
+            pieChart.data.datasets[0].data = Object.values(data);
+            pieChart.update();
+        } else {
+            // יצירת גרף חדש אם אין גרף קיים
+            pieChart = new Chart(ctx, {
+                type: "pie",
+                data: {
+                    labels: Object.keys(data),
+                    datasets: [{
+                        data: Object.values(data),
+                        backgroundColor: ["#df0f25", "#134de3", "#fff156", "#29c72f", "#9966FF"]
+                    }]
+                }
+            });
+        }
+    }
+
+    // עדכון הקוד להוספת מוצר
+    document.getElementById("add-cost-form").addEventListener("submit", async (e) => {
+        e.preventDefault();
+        const sum = parseFloat(document.getElementById("sum").value);
+        const category = document.getElementById("category").value;
+        const description = document.getElementById("description").value;
+        const date = new Date();
+
+        await db.add({ sum, category, description, date });
+        alert("Cost item added successfully!");
+        e.target.reset();
+
+        // קבלת נתונים מעודכנים וטעינת גרף מחדש
+        const month = new Date().getMonth() + 1; // חודש נוכחי
+        const year = new Date().getFullYear();  // שנה נוכחית
+        const items = await db.getAll();
+        const filteredItems = items.filter(item => {
+            const itemDate = new Date(item.date);
+            return itemDate.getMonth() + 1 === month && itemDate.getFullYear() === year;
+        });
+
+        const categoryTotals = {};
+        filteredItems.forEach(item => {
+            categoryTotals[item.category] = (categoryTotals[item.category] || 0) + item.sum;
+        });
+
+        updatePieChart(categoryTotals);
+    });
+
+    // עדכון פונקציית יצירת גרף בפעם הראשונה
+    document.getElementById("chart-form").addEventListener("submit", async (e) => {
+        e.preventDefault();
+        const month = parseInt(document.getElementById("chart-month").value);
+        const year = parseInt(document.getElementById("chart-year").value);
+
+        const items = await db.getAll();
+        const filteredItems = items.filter(item => {
+            const itemDate = new Date(item.date);
+            return itemDate.getMonth() + 1 === month && itemDate.getFullYear() === year;
+        });
+
+        const categoryTotals = {};
+        filteredItems.forEach(item => {
+            categoryTotals[item.category] = (categoryTotals[item.category] || 0) + item.sum;
+        });
+
+        updatePieChart(categoryTotals);
+    });
+
+    // Generate Pie Chart
+    document.getElementById("chart-form").addEventListener("submit", async (e) => {
+        e.preventDefault();
+        const month = parseInt(document.getElementById("chart-month").value);
+        const year = parseInt(document.getElementById("chart-year").value);
+
+        const items = await db.getAll();
+        const filteredItems = items.filter(item => {
+            const itemDate = new Date(item.date);
+            return itemDate.getMonth() + 1 === month && itemDate.getFullYear() === year;
+        });
+
+        const categoryTotals = {};
+        filteredItems.forEach(item => {
+            categoryTotals[item.category] = (categoryTotals[item.category] || 0) + item.sum;
+        });
+
+        const ctx = document.getElementById("cost-pie-chart").getContext("2d");
+        new Chart(ctx, {
+            type: "pie",
+            data: {
+                labels: Object.keys(categoryTotals),
+                datasets: [{
+                    data: Object.values(categoryTotals),
+                    backgroundColor: ["#df0f25", "#134de3", "#fff156", "#29c72f", "#9966FF"]
+                }]
+            }
+        });
+    });
+</script>
+</body>
+</html>
