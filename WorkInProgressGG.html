@@ -1,0 +1,290 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Cost Tracker</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/3.7.0/chart.min.js"></script>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 20px;
+        }
+        .container {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 20px;
+        }
+        .form-group {
+            margin-bottom: 15px;
+        }
+        label {
+            display: block;
+            margin-bottom: 5px;
+        }
+        input, select {
+            width: 100%;
+            padding: 8px;
+            margin-bottom: 10px;
+        }
+        button {
+            background-color: #4CAF50;
+            color: white;
+            padding: 10px 15px;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+        }
+        button:hover {
+            background-color: #45a049;
+        }
+        .report {
+            border: 1px solid #ddd;
+            padding: 20px;
+            border-radius: 4px;
+        }
+        #pieChart {
+            max-width: 100%;
+            height: 400px;
+        }
+    </style>
+</head>
+<body>
+<h1>Cost Tracker</h1>
+
+<div class="container">
+    <div class="input-section">
+        <h2>Add New Cost</h2>
+        <div class="form-group">
+            <label for="amount">Amount:</label>
+            <input type="number" id="amount" required>
+        </div>
+        <div class="form-group">
+            <label for="category">Category:</label>
+            <select id="category">
+                <option value="groceries">Groceries</option>
+                <option value="utilities">Utilities</option>
+                <option value="entertainment">Entertainment</option>
+                <option value="transport">Transport</option>
+                <option value="other">Other</option>
+            </select>
+        </div>
+        <div class="form-group">
+            <label for="description">Description:</label>
+            <input type="text" id="description" required>
+        </div>
+        <button onclick="addCost()">Add Cost</button>
+    </div>
+
+    <div class="report-section">
+        <h2>Monthly Report</h2>
+        <div class="form-group">
+            <label for="monthSelect">Select Month:</label>
+            <input type="month" id="monthSelect">
+        </div>
+        <button onclick="generateReport()">Generate Report</button>
+        <div id="report" class="report"></div>
+    </div>
+</div>
+
+<div>
+    <h2>Cost Distribution</h2>
+    <canvas id="pieChart"></canvas>
+</div>
+
+<script>
+    // IndexedDB Wrapper Library
+    const CostDB = {
+        db: null,
+
+        init() {
+            return new Promise((resolve, reject) => {
+                const request = indexedDB.open('CostTracker', 1);
+
+                request.onerror = () => reject(request.error);
+                request.onsuccess = () => {
+                    this.db = request.result;
+                    resolve();
+                };
+
+                request.onupgradeneeded = (event) => {
+                    const db = event.target.result;
+                    const store = db.createObjectStore('costs', {
+                        keyPath: 'id',
+                        autoIncrement: true
+                    });
+                    store.createIndex('date', 'date');
+                    store.createIndex('category', 'category');
+                };
+            });
+        },
+
+        addCost(cost) {
+            return new Promise((resolve, reject) => {
+                const transaction = this.db.transaction(['costs'], 'readwrite');
+                const store = transaction.objectStore('costs');
+                const request = store.add(cost);
+
+                request.onsuccess = () => resolve(request.result);
+                request.onerror = () => reject(request.error);
+            });
+        },
+
+        getCostsByMonth(year, month) {
+            return new Promise((resolve, reject) => {
+                const transaction = this.db.transaction(['costs'], 'readonly');
+                const store = transaction.objectStore('costs');
+                const costs = [];
+
+                const request = store.openCursor();
+
+                request.onsuccess = (event) => {
+                    const cursor = event.target.result;
+                    if (cursor) {
+                        const date = new Date(cursor.value.date);
+                        if (date.getFullYear() === year && date.getMonth() === month) {
+                            costs.push(cursor.value);
+                        }
+                        cursor.continue();
+                    } else {
+                        resolve(costs);
+                    }
+                };
+
+                request.onerror = () => reject(request.error);
+            });
+        }
+    };
+
+    // Initialize the database
+    CostDB.init().catch(console.error);
+
+    let chart = null;
+
+    // UI Functions
+    async function addCost() {
+        const amount = document.getElementById('amount').value;
+        const category = document.getElementById('category').value;
+        const description = document.getElementById('description').value;
+
+        if (!amount || !description) {
+            alert('Please fill in all fields');
+            return;
+        }
+
+        const cost = {
+            amount: parseFloat(amount),
+            category,
+            description,
+            date: new Date().toISOString()
+        };
+
+        try {
+            await CostDB.addCost(cost);
+            alert('Cost added successfully!');
+            document.getElementById('amount').value = '';
+            document.getElementById('description').value = '';
+            generateReport();
+        } catch (error) {
+            console.error('Error adding cost:', error);
+            alert('Error adding cost');
+        }
+    }
+
+    async function generateReport() {
+        const monthSelect = document.getElementById('monthSelect').value;
+        if (!monthSelect) {
+            alert('Please select a month');
+            return;
+        }
+
+        const [year, month] = monthSelect.split('-');
+        try {
+            const costs = await CostDB.getCostsByMonth(parseInt(year), parseInt(month) - 1);
+
+            // Generate report HTML
+            const reportHtml = generateReportHtml(costs);
+            document.getElementById('report').innerHTML = reportHtml;
+
+            // Update pie chart
+            updatePieChart(costs);
+        } catch (error) {
+            console.error('Error generating report:', error);
+            alert('Error generating report');
+        }
+    }
+
+    function generateReportHtml(costs) {
+        if (costs.length === 0) {
+            return '<p>No costs recorded for this month.</p>';
+        }
+
+        const total = costs.reduce((sum, cost) => sum + cost.amount, 0);
+        let html = `<h3>Total: $${total.toFixed(2)}</h3><ul>`;
+
+        costs.forEach(cost => {
+            html += `
+                    <li>
+                        ${new Date(cost.date).toLocaleDateString()} -
+                        ${cost.category} -
+                        ${cost.description} -
+                        $${cost.amount.toFixed(2)}
+                    </li>
+                `;
+        });
+
+        html += '</ul>';
+        return html;
+    }
+
+    function updatePieChart(costs) {
+        // Calculate totals by category
+        const categoryTotals = costs.reduce((acc, cost) => {
+            acc[cost.category] = (acc[cost.category] || 0) + cost.amount;
+            return acc;
+        }, {});
+
+        const data = {
+            labels: Object.keys(categoryTotals),
+            datasets: [{
+                data: Object.values(categoryTotals),
+                backgroundColor: [
+                    '#FF6384',
+                    '#36A2EB',
+                    '#FFCE56',
+                    '#4BC0C0',
+                    '#9966FF'
+                ]
+            }]
+        };
+
+        const ctx = document.getElementById('pieChart').getContext('2d');
+
+        // Destroy existing chart if it exists
+        if (chart) {
+            chart.destroy();
+        }
+
+        // Create new chart
+        chart = new Chart(ctx, {
+            type: 'pie',
+            data: data,
+            options: {
+                responsive: true,
+                plugins: {
+                    legend: {
+                        position: 'top',
+                    },
+                    title: {
+                        display: true,
+                        text: 'Cost Distribution by Category'
+                    }
+                }
+            }
+        });
+    }
+</script>
+</body>
+</html>
