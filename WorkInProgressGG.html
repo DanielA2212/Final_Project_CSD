@@ -6,6 +6,32 @@
     <title>Cost Tracker</title>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/3.7.0/chart.min.js"></script>
     <style>
+        .scrollable_list {
+            max-height: 300px;
+            overflow-y: auto;
+            border: 1px solid #ddd;
+            padding: 10px;
+            margin-top: 10px;
+        }
+
+        .scrollable_list ul {
+            list-style-type: none;
+            padding: 0;
+            margin: 0;
+        }
+
+        .scrollable_list li {
+            margin-bottom: 10px;
+            padding-bottom: 10px;
+            border-bottom: 1px solid #eee;
+        }
+
+        .scrollable_list li:last-child {
+            margin-bottom: 0;
+            padding-bottom: 0;
+            border-bottom: none;
+        }
+
         body {
             font-family: Arial, sans-serif;
             max-width: 1200px;
@@ -228,13 +254,16 @@
             return '<p>No costs recorded for this month.</p>';
         }
 
+        // Sort costs by date
+        costs.sort((a, b) => new Date(a.date) - new Date(b.date));
+
         const total = costs.reduce((sum, cost) => sum + cost.amount, 0);
-        let html = `<h3>Total: $${total.toFixed(2)}</h3><ul>`;
+        let html = `<h3>Total: $${total.toFixed(2)}</h3><div class="scrollable_list"><ul>`;
 
         costs.forEach(cost => {
             html += `
                     <li>
-                        ${new Date(cost.date).toLocaleDateString('en-GB')} :
+                        ${new Date(cost.date).toLocaleDateString('en-GB')}:
                         ${cost.category} -
                         ${cost.description} -
                         $${cost.amount.toFixed(2)}
@@ -242,7 +271,7 @@
                 `;
         });
 
-        html += '</ul>';
+        html += '</ul></div>';
         return html;
     }
 
