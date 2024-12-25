@@ -63,8 +63,8 @@
             <input type="number" id="amount" required>
         </div>
         <div class="form-group">
-            <label for="costdate">Date:</label>
-            <input type="month" id="costdate" required>
+            <label for="pDate">Date:</label>
+            <input type="date" placeholder="dd-mm-yyyy" id="pDate" required>
         </div>
         <div class="form-group">
             <label for="category">Category:</label>
@@ -81,6 +81,7 @@
             <input type="text" autocomplete="on" id="description" required>
         </div>
         <button onclick="addCost()">Add Cost</button>
+        <span id="addCost_massage"></span>
     </div>
 
     <div class="report-section">
@@ -171,11 +172,11 @@
     // UI Functions
     async function addCost() {
         const amount = document.getElementById('amount').value;
-        const costdate = document.getElementById('month').value;
+        const pDate = new Date(document.getElementById('pDate').value).toLocaleDateString('en-GB');
         const category = document.getElementById('category').value;
         const description = document.getElementById('description').value;
 
-        if (!amount || !description || !costdate) {
+        if (!amount || !description || !pDate) {
             alert('Please fill in all fields');
             return;
         }
@@ -184,13 +185,12 @@
             amount: parseFloat(amount),
             category,
             description,
-            costdate,
-            date: new Date().toISOString()
+            date: pDate
         };
 
         try {
             await CostDB.addCost(cost);
-            alert('Cost added successfully!');
+            document.getElementById('addCost_massage').innerHTML = 'Cost Added Successfully!';
             document.getElementById('amount').value = '';
             document.getElementById('description').value = '';
             await generateReport();
@@ -234,7 +234,7 @@
         costs.forEach(cost => {
             html += `
                     <li>
-                        ${new Date(cost.date).toLocaleDateString()} -
+                        ${new Date(cost.date).toLocaleDateString('en-GB')} :
                         ${cost.category} -
                         ${cost.description} -
                         $${cost.amount.toFixed(2)}
