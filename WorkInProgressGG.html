@@ -52,14 +52,19 @@
     </style>
 </head>
 <body>
-<h1>Cost Tracker</h1>
+<h1>Cost Manager</h1>
 
 <div class="container">
     <div class="input-section">
+<!--        Graphical design for the cost-->
         <h2>Add New Cost</h2>
         <div class="form-group">
             <label for="amount">Amount:</label>
             <input type="number" id="amount" required>
+        </div>
+        <div class="form-group">
+            <label for="costdate">Date:</label>
+            <input type="month" id="costdate" required>
         </div>
         <div class="form-group">
             <label for="category">Category:</label>
@@ -73,7 +78,7 @@
         </div>
         <div class="form-group">
             <label for="description">Description:</label>
-            <input type="text" id="description" required>
+            <input type="text" autocomplete="on" id="description" required>
         </div>
         <button onclick="addCost()">Add Cost</button>
     </div>
@@ -90,7 +95,7 @@
 </div>
 
 <div>
-    <h2>Cost Distribution</h2>
+    <h2>Cost Distribution Pie Chart</h2>
     <canvas id="pieChart"></canvas>
 </div>
 
@@ -166,10 +171,11 @@
     // UI Functions
     async function addCost() {
         const amount = document.getElementById('amount').value;
+        const costdate = document.getElementById('month').value;
         const category = document.getElementById('category').value;
         const description = document.getElementById('description').value;
 
-        if (!amount || !description) {
+        if (!amount || !description || !costdate) {
             alert('Please fill in all fields');
             return;
         }
@@ -178,6 +184,7 @@
             amount: parseFloat(amount),
             category,
             description,
+            costdate,
             date: new Date().toISOString()
         };
 
@@ -186,7 +193,7 @@
             alert('Cost added successfully!');
             document.getElementById('amount').value = '';
             document.getElementById('description').value = '';
-            generateReport();
+            await generateReport();
         } catch (error) {
             console.error('Error adding cost:', error);
             alert('Error adding cost');
