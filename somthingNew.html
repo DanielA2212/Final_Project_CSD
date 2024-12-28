@@ -1,0 +1,434 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Expense Tracker</title>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/3.7.0/chart.min.js"></script>
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+      max-width: 1200px;
+      margin: 0 auto;
+      padding: 20px;
+    }
+    .container {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 20px;
+    }
+    .form-group {
+      margin-bottom: 15px;
+    }
+    .form-group label {
+      display: block;
+      margin-bottom: 5px;
+    }
+    .form-group input, .form-group select {
+      width: 100%;
+      padding: 8px;
+      margin-bottom: 10px;
+    }
+    button {
+      background-color: #4CAF50;
+      color: white;
+      padding: 10px 15px;
+      border: none;
+      border-radius: 4px;
+      cursor: pointer;
+    }
+    button:hover {
+      background-color: #45a049;
+    }
+    .delete-btn {
+      background-color: #f44336;
+      margin-left: 10px;
+      padding: 5px 10px;
+      font-size: 0.8em;
+    }
+    .delete-btn:hover {
+      background-color: #da190b;
+    }
+    #expenseList {
+      margin-top: 20px;
+    }
+    .chart-container {
+      width: 100%;
+      max-width: 600px;
+      margin-top: 20px;
+    }
+    .expense-item {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 10px;
+      border-bottom: 1px solid #eee;
+    }
+    .expense-details {
+      flex-grow: 1;
+    }
+    .message {
+      padding: 10px;
+      margin: 10px 0;
+      border-radius: 4px;
+      display: none;
+    }
+    .success {
+      background-color: #dff0d8;
+      color: #3c763d;
+      border: 1px solid #d6e9c6;
+    }
+    .error {
+      background-color: #f2dede;
+      color: #a94442;
+      border: 1px solid #ebccd1;
+    }
+    .loading {
+      opacity: 0.5;
+      pointer-events: none;
+    }
+    .btn-group {
+      display: flex;
+      gap: 10px;
+    }
+    .clear-btn {
+      background-color: #6c757d;
+    }
+    .clear-btn:hover {
+      background-color: #5a6268;
+    }
+  </style>
+</head>
+<body>
+<h1>Expense Tracker</h1>
+
+<div id="message" class="message"></div>
+
+<div class="container">
+  <div>
+    <h2>Add New Expense</h2>
+    <form id="expenseForm">
+      <div class="form-group">
+        <label for="amount">Amount:</label>
+        <input type="number" id="amount" name="amount" required step="0.01" min="0">
+      </div>
+      <div class="form-group">
+        <label for="category">Category:</label>
+        <select id="category" name="category" required>
+          <option value="food">Food</option>
+          <option value="transportation">Transportation</option>
+          <option value="utilities">Utilities</option>
+          <option value="entertainment">Entertainment</option>
+          <option value="other">Other</option>
+        </select>
+      </div>
+      <div class="form-group">
+        <label for="description">Description:</label>
+        <input type="text" id="description" name="description" required>
+      </div>
+      <div class="form-group">
+        <label for="date">Date:</label>
+        <input type="date" id="date" name="date" required>
+      </div>
+      <div class="btn-group">
+        <button type="submit">Add Expense</button>
+        <button type="button" class="clear-btn" onclick="clearForm()">Clear</button>
+      </div>
+    </form>
+
+    <h2>View Expenses</h2>
+    <div class="form-group">
+      <label for="monthYear">Select Month and Year:</label>
+      <input type="month" id="monthYear" required>
+      <button onclick="generateReport()">Generate Report</button>
+    </div>
+  </div>
+
+  <div>
+    <h2>Expense Report</h2>
+    <div id="expenseList"></div>
+    <div class="chart-container">
+      <canvas id="pieChart"></canvas>
+    </div>
+  </div>
+</div>
+
+<script>
+  // Constants
+  const CATEGORIES = {
+    food: 'Food',
+    transportation: 'Transportation',
+    utilities: 'Utilities',
+    entertainment: 'Entertainment',
+    other: 'Other'
+  };
+
+  const CHART_COLORS = {
+    food: '#FF6384',
+    transportation: '#36A2EB',
+    utilities: '#FFCE56',
+    entertainment: '#4BC0C0',
+    other: '#9966FF'
+  };
+
+  // Utility functions
+  function showMessage(message, type = 'success') {
+    const messageElement = document.getElementById('message');
+    messageElement.textContent = message;
+    messageElement.className = `message ${type}`;
+    messageElement.style.display = 'block';
+    setTimeout(() => {
+      messageElement.style.display = 'none';
+    }, 3000);
+  }
+
+  function setLoading(isLoading) {
+    document.body.classList.toggle('loading', isLoading);
+  }
+
+  function validateExpense(expense) {
+    if (!expense.amount || expense.amount <= 0) {
+      throw new Error('Amount must be greater than 0');
+    }
+    if (!expense.category || !CATEGORIES[expense.category]) {
+      throw new Error('Invalid category');
+    }
+    if (!expense.date || isNaN(new Date(expense.date).getTime())) {
+      throw new Error('Invalid date');
+    }
+    if (!expense.description.trim()) {
+      throw new Error('Description is required');
+    }
+    return true;
+  }
+
+  // IndexedDB Wrapper Library
+  class ExpenseDB {
+    constructor() {
+      this.dbName = 'ExpenseTracker';
+      this.dbVersion = 1;
+      this.storeName = 'expenses';
+    }
+
+    init() {
+      return new Promise((resolve, reject) => {
+        const request = indexedDB.open(this.dbName, this.dbVersion);
+
+        request.onerror = () => reject(request.error);
+        request.onsuccess = () => resolve(request.result);
+
+        request.onupgradeneeded = (event) => {
+          const db = event.target.result;
+          if (!db.objectStoreNames.contains(this.storeName)) {
+            const store = db.createObjectStore(this.storeName, { keyPath: 'id', autoIncrement: true });
+            store.createIndex('date', 'date');
+            store.createIndex('category', 'category');
+          }
+        };
+      });
+    }
+
+    addExpense(expense) {
+      return this.init().then(db => {
+        return new Promise((resolve, reject) => {
+          const transaction = db.transaction([this.storeName], 'readwrite');
+          const store = transaction.objectStore(this.storeName);
+          const request = store.add(expense);
+
+          request.onsuccess = () => resolve(request.result);
+          request.onerror = () => reject(request.error);
+        });
+      });
+    }
+
+    deleteExpense(id) {
+      return this.init().then(db => {
+        return new Promise((resolve, reject) => {
+          const transaction = db.transaction([this.storeName], 'readwrite');
+          const store = transaction.objectStore(this.storeName);
+          const request = store.delete(id);
+
+          request.onsuccess = () => resolve(request.result);
+          request.onerror = () => reject(request.error);
+        });
+      });
+    }
+
+    getExpensesByMonth(year, month) {
+      return this.init().then(db => {
+        return new Promise((resolve, reject) => {
+          const transaction = db.transaction([this.storeName], 'readonly');
+          const store = transaction.objectStore(this.storeName);
+          const expenses = [];
+
+          store.openCursor().onsuccess = (event) => {
+            const cursor = event.target.result;
+            if (cursor) {
+              const expense = cursor.value;
+              const expenseDate = new Date(expense.date);
+              if (expenseDate.getFullYear() === year &&
+                      expenseDate.getMonth() === month - 1) {
+                expenses.push(expense);
+              }
+              cursor.continue();
+            } else {
+              resolve(expenses);
+            }
+          };
+        });
+      });
+    }
+  }
+
+  // Initialize the database
+  const expenseDB = new ExpenseDB();
+  let pieChart = null;
+
+  // New async function for adding expense
+  async function addExpense(formData) {
+    setLoading(true);
+    try {
+      const expense = {
+        amount: parseFloat(formData.get('amount')),
+        category: formData.get('category'),
+        description: formData.get('description'),
+        date: formData.get('date')
+      };
+
+      validateExpense(expense);
+      await expenseDB.addExpense(expense);
+      showMessage('Expense added successfully!');
+      document.getElementById('expenseForm').reset();
+      await generateReport();
+    } catch (error) {
+      console.error('Error adding expense:', error);
+      showMessage(error.message, 'error');
+      throw error;
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  // Clear form function
+  function clearForm() {
+    document.getElementById('expenseForm').reset();
+  }
+
+  // Updated form submission handler
+  document.getElementById('expenseForm').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const formData = new FormData(e.target);
+
+    try {
+      await addExpense(formData);
+    } catch (error) {
+      console.error('Error in form submission:', error);
+    }
+  });
+
+  // Delete expense handler
+  async function deleteExpense(id) {
+    if (confirm('Are you sure you want to delete this expense?')) {
+      setLoading(true);
+      try {
+        await expenseDB.deleteExpense(id);
+        showMessage('Expense deleted successfully!');
+        await generateReport();
+      } catch (error) {
+        console.error('Error deleting expense:', error);
+        showMessage('Error deleting expense', 'error');
+      } finally {
+        setLoading(false);
+      }
+    }
+  }
+
+  // Generate expense report and chart
+  async function generateReport() {
+    const monthYearInput = document.getElementById('monthYear').value;
+    if (!monthYearInput) {
+      showMessage('Please select a month and year', 'error');
+      return;
+    }
+
+    setLoading(true);
+    try {
+      const [year, month] = monthYearInput.split('-').map(Number);
+      const expenses = await expenseDB.getExpensesByMonth(year, month);
+      displayExpenses(expenses);
+      updatePieChart(expenses);
+    } catch (error) {
+      console.error('Error generating report:', error);
+      showMessage('Error generating report', 'error');
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  function displayExpenses(expenses) {
+    const listElement = document.getElementById('expenseList');
+    if (expenses.length === 0) {
+      listElement.innerHTML = '<p>No expenses found for this period.</p>';
+      return;
+    }
+
+    expenses.sort((a, b) => new Date(b.date) - new Date(a.date));
+
+    const total = expenses.reduce((sum, expense) => sum + expense.amount, 0);
+    let html = `<h3>Total: $${total.toFixed(2)}</h3>`;
+
+    expenses.forEach(expense => {
+      html += `
+                    <div class="expense-item">
+                        <div class="expense-details">
+                            ${expense.date}: $${expense.amount.toFixed(2)} -
+                            ${CATEGORIES[expense.category]} (${expense.description})
+                        </div>
+                        <button class="delete-btn" onclick="deleteExpense(${expense.id})">Delete</button>
+                    </div>
+                `;
+    });
+
+    listElement.innerHTML = html;
+  }
+
+  function updatePieChart(expenses) {
+    try {
+      const categoryTotals = expenses.reduce((acc, expense) => {
+        acc[expense.category] = (acc[expense.category] || 0) + expense.amount;
+        return acc;
+      }, {});
+
+      const data = {
+        labels: Object.keys(categoryTotals).map(key => CATEGORIES[key]),
+        datasets: [{
+          data: Object.values(categoryTotals),
+          backgroundColor: Object.keys(categoryTotals).map(key => CHART_COLORS[key])
+        }]
+      };
+
+      if (pieChart) {
+        pieChart.destroy();
+      }
+
+      const ctx = document.getElementById('pieChart').getContext('2d');
+      pieChart = new Chart(ctx, {
+        type: 'pie',
+        data: data,
+        options: {
+          responsive: true,
+          plugins: {
+            legend: {
+              position: 'bottom'
+            }
+          }
+        }
+      });
+    } catch (error) {
+      console.error('Error updating pie chart:', error);
+      showMessage('Error updating pie chart', 'error');
+    }
+  }
+</script>
+</body>
+</html>
