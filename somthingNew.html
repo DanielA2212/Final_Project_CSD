@@ -40,13 +40,13 @@
     button:hover {
       background-color: #45a049;
     }
-    .delete-btn {
+    .delete_btn {
       background-color: #f44336;
       margin-left: 10px;
       padding: 5px 10px;
       font-size: 0.8em;
     }
-    .delete-btn:hover {
+    .delete_btn:hover {
       background-color: #da190b;
     }
     #expenseList {
@@ -136,6 +136,7 @@
       </div>
     </form>
 
+
     <h2>View Expenses</h2>
     <div class="form-group">
       <label for="monthYear">Select Month and Year:</label>
@@ -143,6 +144,7 @@
       <button onclick="generateReport()">Generate Report</button>
     </div>
   </div>
+
 
   <div>
     <h2>Expense Report</h2>
@@ -343,6 +345,7 @@
     }
   }
 
+
   // Generate expense report and chart
   async function generateReport() {
     const monthYearInput = document.getElementById('monthYear').value;
@@ -384,7 +387,7 @@
                             ${expense.date}: $${expense.amount.toFixed(2)} -
                             ${CATEGORIES[expense.category]} (${expense.description})
                         </div>
-                        <button class="delete-btn" onclick="deleteExpense(${expense.id})">Delete</button>
+                        <button class="delete_btn" onclick="deleteExpense(${expense.id})">Delete</button>
                     </div>
                 `;
     });
